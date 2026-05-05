@@ -2,7 +2,7 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
-DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///./students.db')
+DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///./kuppam.db')
 # os.getenv('DATABASE_URL', default) returns default if the variable is not set
 
 engine = create_engine(
@@ -16,29 +16,6 @@ class Base(DeclarativeBase):
 
 def get_db():
     db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-
-
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker,declarative_base
-DATABASE_URL="sqlite:///./kuppam.db"
-engine=create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread":False}
-)
-SessionLocal=sessionmaker(
-    bind=engine,
-    autocommit=False,   
-    autoflush=False
-)
-Base=declarative_base()
-def get_db():
-    db=SessionLocal()
     try:
         yield db
     finally:
