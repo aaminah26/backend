@@ -11,6 +11,8 @@ import models.student
 
 # Load .env variables
 load_dotenv()
+from routers import auth, students, ai
+FRONTEND_URL=os.getenv("FRONTEND_URL","http://localhost:5173")
 
 # Create DB tables
 Base.metadata.create_all(bind=engine)
@@ -42,7 +44,7 @@ app.add_middleware(
 # ─────────────────────────────────────────────
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(students.router, prefix="/students", tags=["Students"])
-
+app.include_router(ai.router)
 # ─────────────────────────────────────────────
 # TEST ROUTE
 # ─────────────────────────────────────────────
