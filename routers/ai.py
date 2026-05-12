@@ -1,15 +1,28 @@
 import os
+import json
 from typing import Dict, Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+
 from google import genai
 from google.genai import types
+
 from dependencies import get_current_user
 
 router = APIRouter(prefix="/ai", tags=["AI"])
 
+# ─────────────────────────────────────────────────────────────
+# Environment Check
+# ─────────────────────────────────────────────────────────────
+
 if not os.getenv("GEMINI_API_KEY"):
     raise RuntimeError("GEMINI_API_KEY is not set in .env")
+
+# ─────────────────────────────────────────────────────────────
+# Gemini Client
+# ─────────────────────────────────────────────────────────────
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
@@ -25,6 +38,10 @@ SYSTEM_CONTEXT = (
     "Answer questions about Python, web development, FastAPI, React, databases, and AI. "
     "Keep responses under 200 words unless more detail is required."
 )
+
+# ─────────────────────────────────────────────────────────────
+# In-memory Chat Sessions
+# ─────────────────────────────────────────────────────────────
 
 chat_sessions: Dict[int, object] = {}
 
@@ -43,7 +60,12 @@ def get_or_create_session(user_id: int):
                 }
             ]
         )
+
     return chat_sessions[user_id]
+
+# ─────────────────────────────────────────────────────────────
+# Request / Response Models
+# ─────────────────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
@@ -65,11 +87,22 @@ class ExplainRequest(BaseModel):
 class ExplainResponse(BaseModel):
     explanation: str
 
+class StreamRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=1000)
+
+# ─────────────────────────────────────────────────────────────
+# Explain Levels
+# ─────────────────────────────────────────────────────────────
+
 LEVEL_PERSONAS = {
     "beginner": "a school student who has never programmed before",
     "intermediate": "a college student who knows Python basics",
     "expert": "a senior software engineer who wants implementation details",
 }
+
+# ─────────────────────────────────────────────────────────────
+# Chat Route
+# ─────────────────────────────────────────────────────────────
 
 @router.post("/chat", response_model=ChatResponse)
 def chat_with_ai(
@@ -98,6 +131,10 @@ def chat_with_ai(
             status_code=503,
             detail="AI service unavailable."
         )
+
+# ─────────────────────────────────────────────────────────────
+# Summarize Route
+# ─────────────────────────────────────────────────────────────
 
 @router.post("/summarize", response_model=SummariseResponse)
 def summarize_text(
@@ -139,6 +176,10 @@ def summarize_text(
             detail="AI service unavailable."
         )
 
+# ─────────────────────────────────────────────────────────────
+# Explain Route
+# ─────────────────────────────────────────────────────────────
+
 @router.post("/explain", response_model=ExplainResponse)
 def explain_topic(
     request: ExplainRequest,
@@ -179,6 +220,73 @@ def explain_topic(
             status_code=503,
             detail="AI service unavailable."
         )
+
+# ─────────────────────────────────────────────────────────────
+# Streaming Generator (SSE)
+# ─────────────────────────────────────────────────────────────
+
+def stream_chat_response(user_id: int, message: str):
+    """
+    Generator that streams Gemini responses chunk-by-chunk.
+    Uses the existing user session so chat history is preserved.
+    """
+
+    session = get_or_create_session(user_id)
+
+    try:
+        for chunk in session.send_message_stream(message):
+
+            if chunk.text:
+                data = json.dumps({
+                    "chunk": chunk.text
+                })
+
+                yield f"data: {data}\n\n"
+
+        yield "data: [DONE]\n\n"
+
+    except ValueError:
+        error = json.dumps({
+            "error": "Content blocked — try rephrasing."
+        })
+
+        yield f"data: {error}\n\n"
+        yield "data: [DONE]\n\n"
+
+    except Exception as exc:
+        print(f"[stream] Gemini error: {exc}")
+
+        error = json.dumps({
+            "error": "AI service temporarily unavailable."
+        })
+
+        yield f"data: {error}\n\n"
+        yield "data: [DONE]\n\n"
+
+# ─────────────────────────────────────────────────────────────
+# Streaming Route
+# ─────────────────────────────────────────────────────────────
+
+@router.post("/stream")
+def stream_ai_response(
+    request: StreamRequest,
+    current_user=Depends(get_current_user),
+):
+    return StreamingResponse(
+        stream_chat_response(
+            current_user.id,
+            request.message
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+# ─────────────────────────────────────────────────────────────
+# Reset Chat Route
+# ─────────────────────────────────────────────────────────────
 
 @router.delete("/chat/reset", status_code=204)
 def reset_chat(
