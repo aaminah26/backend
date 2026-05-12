@@ -1,3 +1,5 @@
+# routers/ai.py
+
 import os
 import json
 from typing import Dict, Literal
@@ -10,6 +12,10 @@ from google import genai
 from google.genai import types
 
 from dependencies import get_current_user
+
+# ─────────────────────────────────────────────────────────────
+# Router
+# ─────────────────────────────────────────────────────────────
 
 router = APIRouter(prefix="/ai", tags=["AI"])
 
@@ -24,20 +30,40 @@ if not os.getenv("GEMINI_API_KEY"):
 # Gemini Client
 # ─────────────────────────────────────────────────────────────
 
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+client = genai.Client(
+    api_key=os.getenv("GEMINI_API_KEY")
+)
 
 MODEL_NAME = "gemini-2.5-flash"
 
 GENERATION_CONFIG = types.GenerateContentConfig(
     temperature=0.7,
-    max_output_tokens=512
+    max_output_tokens=512,
 )
 
-SYSTEM_CONTEXT = (
-    "You are a helpful Python programming assistant for college students. "
-    "Answer questions about Python, web development, FastAPI, React, databases, and AI. "
-    "Keep responses under 200 words unless more detail is required."
-)
+# ─────────────────────────────────────────────────────────────
+# System Context
+# ─────────────────────────────────────────────────────────────
+
+SYSTEM_CONTEXT = """
+You are a helpful programming assistant for college students learning
+Python full stack development.
+
+Help with:
+- Python
+- FastAPI
+- React
+- SQL / SQLite
+- Web development
+- AI chatbots
+- APIs
+- Authentication
+
+Explain concepts clearly using beginner-friendly language and real-world
+analogies. Use short code examples when useful.
+
+Keep answers concise and under 200 words unless more detail is required.
+"""
 
 # ─────────────────────────────────────────────────────────────
 # In-memory Chat Sessions
@@ -64,14 +90,22 @@ def get_or_create_session(user_id: int):
     return chat_sessions[user_id]
 
 # ─────────────────────────────────────────────────────────────
-# Request / Response Models
+# Pydantic Schemas
 # ─────────────────────────────────────────────────────────────
+
+class AskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=1000)
+
+class AskResponse(BaseModel):
+    answer: str
+
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
 
 class ChatResponse(BaseModel):
     reply: str
+
 
 class SummariseRequest(BaseModel):
     text: str = Field(min_length=20, max_length=5000)
@@ -80,12 +114,14 @@ class SummariseRequest(BaseModel):
 class SummariseResponse(BaseModel):
     summary: str
 
+
 class ExplainRequest(BaseModel):
     topic: str = Field(min_length=2, max_length=300)
     level: Literal["beginner", "intermediate", "expert"] = "beginner"
 
 class ExplainResponse(BaseModel):
     explanation: str
+
 
 class StreamRequest(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
@@ -101,6 +137,45 @@ LEVEL_PERSONAS = {
 }
 
 # ─────────────────────────────────────────────────────────────
+# Ask Route
+# ─────────────────────────────────────────────────────────────
+
+@router.post("/ask", response_model=AskResponse)
+def ask_ai(
+    request: AskRequest,
+    current_user=Depends(get_current_user)
+):
+    full_prompt = (
+        f"{SYSTEM_CONTEXT}\n\n"
+        f"Student question: {request.question}"
+    )
+
+    try:
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=full_prompt,
+            config=GENERATION_CONFIG,
+        )
+
+        return AskResponse(
+            answer=response.text.strip()
+        )
+
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="This question could not be answered. Please rephrase it."
+        )
+
+    except Exception as exc:
+        print(f"[ask] Gemini error: {exc}")
+
+        raise HTTPException(
+            status_code=503,
+            detail="AI service is temporarily unavailable."
+        )
+
+# ─────────────────────────────────────────────────────────────
 # Chat Route
 # ─────────────────────────────────────────────────────────────
 
@@ -112,7 +187,9 @@ def chat_with_ai(
     session = get_or_create_session(current_user.id)
 
     try:
-        response = session.send_message(request.message)
+        response = session.send_message(
+            request.message
+        )
 
         return ChatResponse(
             reply=response.text.strip()
@@ -143,8 +220,8 @@ def summarize_text(
 ):
     prompt = (
         f"Summarise the following text in no more than "
-        f"{request.max_words} words. "
-        f"Return only the summary without headings or commentary.\n\n"
+        f"{request.max_words} words.\n\n"
+        f"Return only the summary.\n\n"
         f"TEXT:\n{request.text}"
     )
 
@@ -154,7 +231,7 @@ def summarize_text(
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.3,
-                max_output_tokens=600
+                max_output_tokens=600,
             )
         )
 
@@ -189,7 +266,7 @@ def explain_topic(
 
     prompt = (
         f"Explain the following to {persona}.\n"
-        f"Include a real-world analogy. "
+        f"Include a real-world analogy.\n"
         f"If relevant, add a short Python code example "
         f"(5 lines max).\n"
         f"Keep the explanation under 200 words.\n\n"
@@ -227,8 +304,7 @@ def explain_topic(
 
 def stream_chat_response(user_id: int, message: str):
     """
-    Generator that streams Gemini responses chunk-by-chunk.
-    Uses the existing user session so chat history is preserved.
+    Stream Gemini responses chunk-by-chunk.
     """
 
     session = get_or_create_session(user_id)
