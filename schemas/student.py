@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from typing import Optional
 
 
@@ -18,5 +18,5 @@ class StudentResponse(BaseModel):
     email: EmailStr
     city: Optional[str] = None
 
-    class Config:
-        from_attributes = True   # ✅ FIX for Pydantic v2
+    # ✅ Pydantic v2 correct configuration
+    model_config = ConfigDict(from_attributes=True)

@@ -42,7 +42,7 @@ def create_student(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    student = Student(**data.dict())
+    student = Student(**data.model_dump())
     db.add(student)
 
     try:
