@@ -23,8 +23,7 @@ router = APIRouter(prefix="/ai", tags=["AI"])
 # Environment Check
 # ─────────────────────────────────────────────────────────────
 
-if not os.getenv("GEMINI_API_KEY"):
-    raise RuntimeError("GEMINI_API_KEY is not set in .env")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "dummy-key")
 
 # ─────────────────────────────────────────────────────────────
 # Gemini Client
