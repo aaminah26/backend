@@ -35,5 +35,5 @@ jobs:
         env:
           # Provide the secrets the app needs during testing
           # These values are for CI only — use GitHub Secrets for real values
-          SECRET_KEY: test-secret-key-for-ci-only-not-production
-          GEMINI_API_KEY: dummy-key-not-used-in-tests
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

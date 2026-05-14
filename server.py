@@ -8,7 +8,7 @@ from jose import jwt,JWTError
 from datetime import datetime,timedelta
 app=FastAPI()
 pwd_context=CryptContext(schemes=["bcrypt"],deprecated="auto")
-SECRET_KEY="my-super-secret-key"
+SECRET_KEY="your-super-secret-key-change-this-in-production"
 ALGORITHM="HS256"
 bearer_scheme = HTTPBearer()
 def hash_password(password:str)->str:
